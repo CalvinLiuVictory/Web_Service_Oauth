@@ -1,5 +1,6 @@
 import { ApolloServer } from '@apollo/server';
 import { startServerAndCreateNextHandler } from '@as-integrations/next';
+import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import jwt from 'jsonwebtoken';
 import pkg from 'pg';
 
@@ -120,11 +121,14 @@ const resolvers = {
   }
 };
 
-// 3. Inisialisasi Apollo Server (Cukup dipanggil SEKALI saja)
+// 3. Inisialisasi Apollo Server (Ubah bagian ini)
 const server = new ApolloServer({
   typeDefs,
   resolvers,
   introspection: true,
+  plugins: [
+    ApolloServerPluginLandingPageLocalDefault({ embed: true }),
+  ],
 });
 
 // 4. Setup Handler dengan Context untuk Verifikasi JWT (Cukup dipanggil SEKALI saja)
