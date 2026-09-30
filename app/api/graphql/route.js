@@ -1,5 +1,6 @@
 import { ApolloServer } from '@apollo/server';
 import { startServerAndCreateNextHandler } from '@as-integrations/next';
+import jwt from 'jsonwebtoken';
 import pkg from 'pg';
 
 const { Pool } = pkg;
@@ -61,7 +62,6 @@ const resolvers = {
       const result = await pool.query('SELECT * FROM categories');
       return result.rows;
     },
-    // Filter produk berdasarkan categoryId jika diberikan
     products: async (_, { categoryId }) => {
       if (categoryId) {
         const result = await pool.query('SELECT * FROM products WHERE category_id = $1', [categoryId]);
@@ -76,15 +76,21 @@ const resolvers = {
     }
   },
   Mutation: {
-    // 1. Create Product
-    createProduct: async (_, { input }) => {
+    // 1. Create Product (DILINDUNGI OAUTH2)
+    createProduct: async (_, { input }, context) => {
+      // Pengecekan Token JWT
+      if (!context.user) {
+        throw new Error('Unauthorized: silakan login terlebih dahulu');
+      }
+
       const result = await pool.query(
         'INSERT INTO products (name, price, stock, category_id) VALUES ($1, $2, $3, $4) RETURNING *',
         [input.name, input.price, input.stock, input.categoryId]
       );
       return result.rows[0];
     },
-    // 2. Update Product (Menggunakan COALESCE agar field opsional yang kosong tidak menimpa data)
+    
+    // 2. Update Product
     updateProduct: async (_, { id, input }) => {
       const result = await pool.query(
         'UPDATE products SET name = COALESCE($1, name), price = COALESCE($2, price), stock = COALESCE($3, stock) WHERE id = $4 RETURNING *',
@@ -92,6 +98,7 @@ const resolvers = {
       );
       return result.rows[0];
     },
+    
     // 3. Delete Product
     deleteProduct: async (_, { id }) => {
       await pool.query('DELETE FROM products WHERE id = $1', [id]);
@@ -113,13 +120,29 @@ const resolvers = {
   }
 };
 
-// 3. Inisialisasi Apollo Server
+// 3. Inisialisasi Apollo Server (Cukup dipanggil SEKALI saja)
 const server = new ApolloServer({
   typeDefs,
   resolvers,
   introspection: true,
 });
 
-const handler = startServerAndCreateNextHandler(server);
+// 4. Setup Handler dengan Context untuk Verifikasi JWT (Cukup dipanggil SEKALI saja)
+const handler = startServerAndCreateNextHandler(server, {
+  context: async (req) => {
+    // Ambil header Authorization dari request Next.js App Router
+    const authHeader = req.headers.get('authorization') || '';
+    const token = authHeader.replace('Bearer ', '');
+    
+    try {
+      // Verifikasi token JWT
+      const user = jwt.verify(token, process.env.JWT_SECRET);
+      return { user };
+    } catch (err) {
+      // Jika tidak ada token atau token salah/kadaluarsa
+      return { user: null };
+    }
+  },
+});
 
 export { handler as GET, handler as POST };
